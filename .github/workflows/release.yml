@@ -1,0 +1,71 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine upload dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+
+  binaries:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            name: atv-macos-arm64
+          - os: macos-13
+            name: atv-macos-x64
+          - os: ubuntu-latest
+            name: atv-linux-x64
+          - os: windows-latest
+            name: atv-windows-x64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyinstaller pyatv textual click rich
+      - run: pip install -e .
+      - name: build binary
+        run: |
+          pyinstaller --onefile --name ${{ matrix.name }} --hidden-import pyatv_cli --hidden-import pyatv --hidden-import textual --collect-all pyatv --collect-all textual pyatv_cli/cli.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.name }}
+
+  github-release:
+    needs: [binaries, pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: create release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "${{ github.ref_name }}" \
+            --notes "install: \`pipx install cli-appletv\` or download binary below" \
+            artifacts/atv-macos-arm64/atv-macos-arm64 \
+            artifacts/atv-macos-x64/atv-macos-x64 \
+            artifacts/atv-linux-x64/atv-linux-x64 \
+            artifacts/atv-windows-x64.exe/atv-windows-x64.exe
+        env:
+          GH_TOKEN: ${{ github.token }}
