@@ -1,4 +1,4 @@
-# pyatv-cli
+# cli-appletv
 
 apple tv remote control from the terminal. full tui with d-pad, volume, app launcher, and playback controls.
 
@@ -6,21 +6,37 @@ built on [pyatv](https://github.com/postlund/pyatv) + [textual](https://github.c
 
 ## install
 
-```bash
-pipx install pyatv-cli
-```
-
-or with pip:
+### macos / linux
 
 ```bash
-pip install pyatv-cli
+pipx install cli-appletv
 ```
 
-**one-liner** (installs pipx if needed, then pyatv-cli):
+one-liner (installs pipx + cli-appletv in one shot):
 
 ```bash
-python3 -m pip install --user pipx && python3 -m pipx install pyatv-cli
+python3 -m pip install --user pipx && python3 -m pipx ensurepath && python3 -m pipx install cli-appletv
 ```
+
+### windows
+
+```powershell
+pip install pipx && pipx ensurepath && pipx install cli-appletv
+```
+
+### homebrew users
+
+```bash
+brew install pipx && pipx ensurepath && pipx install cli-appletv
+```
+
+### or just pip
+
+```bash
+pip install cli-appletv
+```
+
+after install, restart your terminal (or run `source ~/.zshrc` / `source ~/.bashrc`) so `atv` is on your PATH.
 
 ## setup
 
@@ -46,11 +62,11 @@ just run `atv` — it opens the full-screen tui remote:
 │                                 │              │
 │        Volume                   │              │
 │     -    +    Mute              │              │
-├─────────────────┬───────────────┤              │
-│ System          │ Log           │              │
-│ Living Room     │ Connected     │              │
-│ Apple TV 4K     │ Vol +         │              │
-└─────────────────┴───────────────┘              │
+├─────────────────┬───────────────┘              │
+│ System          │ Log                          │
+│ Living Room     │ Connected to Living Room     │
+│ Apple TV 4K     │ Loaded 22 apps               │
+└─────────────────┴──────────────────────────────┘
 ```
 
 ### keyboard shortcuts
@@ -70,6 +86,8 @@ just run `atv` — it opens the full-screen tui remote:
 | ? | help overlay |
 | q | quit |
 
+mouse clicks work on all buttons and the apps list.
+
 ### cli commands
 
 ```bash
@@ -87,9 +105,9 @@ atv --help       # all commands
 
 ## volume on apple tv 4k
 
-volume control uses relative mode (up/down steps) on most apple tv setups connected via hdmi. this is a [known pyatv limitation](https://github.com/postlund/pyatv/issues/1838) — the companion protocol sends HID key events but can't read the current volume level back from hdmi-cec receivers.
+volume control uses relative mode (up/down steps) on most setups connected via hdmi. this is a [known pyatv limitation](https://github.com/postlund/pyatv/issues/1838) — the companion protocol sends HID key events but can't read volume back from hdmi-cec receivers.
 
-the tui handles this correctly with fire-and-forget volume commands (no timeout errors).
+the tui handles this with fire-and-forget volume commands (no timeout errors).
 
 ## requirements
 
