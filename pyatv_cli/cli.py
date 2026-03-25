@@ -41,7 +41,7 @@ BANNER = """[bold cyan]
 
 @click.group(invoke_without_command=True)
 @click.option("--json", "json_mode", is_flag=True, help="Output in JSON format for scripting.")
-@click.version_option(package_name="pyatv-cli", prog_name="pyatv-cli")
+@click.version_option(package_name="cli-appletv", prog_name="atv")
 @click.pass_context
 def cli(ctx, json_mode):
     """🍎 pyatv-cli — Comprehensive Apple TV remote control.

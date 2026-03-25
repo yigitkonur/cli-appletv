@@ -27,6 +27,9 @@ dependencies = [
 [project.scripts]
 atv = "pyatv_cli.cli:cli"
 
+[tool.hatch.build.targets.wheel]
+packages = ["pyatv_cli"]
+
 [project.urls]
 Homepage = "https://github.com/yigitkonur/cli-appletv"
 Issues = "https://github.com/yigitkonur/cli-appletv/issues"
