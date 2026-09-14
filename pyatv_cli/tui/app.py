@@ -13,7 +13,7 @@ from textual.containers import Center, Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import (
-    Button, Footer, Header, Label, ListItem, ListView,
+    Button, Footer, Header, Input, Label, ListItem, ListView,
     ProgressBar, Static, RichLog, Rule, OptionList,
 )
 from textual.widgets.option_list import Option
@@ -190,11 +190,82 @@ class HelpScreen(ModalScreen):
                 for l in ["+/=          Up", "-/_          Down", "0            Mute"]:
                     yield Label(l, classes="hk")
             with Vertical(classes="hsec"):
+                yield Label("[bold]Text Input[/]", classes="hhead")
+                for l in ["i            Type into a focused",
+                          "             text field (search)"]:
+                    yield Label(l, classes="hk")
+            with Vertical(classes="hsec"):
                 yield Label("[bold]System[/]", classes="hhead")
                 for l in ["P            Power", "r            Reconnect",
                           "t            Theme", "?            Help", "q            Quit"]:
                     yield Label(l, classes="hk")
             yield Label("[dim]Esc to close[/]", id="hfoot")
+
+
+# ─── Text Input Screen ───────────────────────────────────────────
+
+class TextInputScreen(ModalScreen[tuple | None]):
+    """Type text into a focused Apple TV text field."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel", priority=True)]
+
+    DEFAULT_CSS = """
+    TextInputScreen { align: center middle; }
+    TextInputScreen > #tidlg {
+        width: 56; height: auto; background: $surface;
+        border: heavy $primary; padding: 1 2;
+    }
+    TextInputScreen #ti-title {
+        text-align: center; text-style: bold; color: $primary;
+        width: 100%; margin-bottom: 1;
+    }
+    TextInputScreen #ti-hint { color: $text-muted; margin-bottom: 1; }
+    TextInputScreen #ti-input { margin-bottom: 1; }
+    TextInputScreen #ti-buttons { height: auto; align: center middle; }
+    TextInputScreen #ti-buttons Button { margin: 0 1; }
+    """
+
+    def __init__(self, current_text: str, focused: bool) -> None:
+        super().__init__()
+        self._current_text = current_text
+        self._focused = focused
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="tidlg"):
+            yield Label("Text Input", id="ti-title")
+            if self._focused:
+                hint = f"Current: {self._current_text}" if self._current_text else "Field is empty"
+            else:
+                hint = "No text field focused on the Apple TV"
+            yield Label(hint, id="ti-hint")
+            yield Input(
+                value=self._current_text,
+                placeholder="Type text for the Apple TV...",
+                id="ti-input",
+            )
+            with Horizontal(id="ti-buttons"):
+                yield Button("Replace", id="btn-replace", variant="primary")
+                yield Button("Append", id="btn-append")
+                yield Button("Clear", id="btn-clear", variant="error")
+                yield Button("Cancel", id="btn-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#ti-input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(("set", event.value))
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        text = self.query_one("#ti-input", Input).value
+        actions = {
+            "btn-replace": ("set", text),
+            "btn-append": ("append", text),
+            "btn-clear": ("clear", ""),
+        }
+        self.dismiss(actions.get(event.button.id))
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
 
 
 # ─── Now Playing (hidden when metadata unavailable) ───────────────
@@ -281,6 +352,7 @@ class RemotePanel(Static):
     RemotePanel .vol-row { height: 3; margin-top: 0; align: center middle; }
     RemotePanel .vol-row Button { width: 9; height: 3; margin: 0 1; }
     RemotePanel #vol-label { width: 100%; text-align: center; color: $text-muted; margin-top: 2; }
+    RemotePanel #kbd-state { width: 100%; text-align: center; color: $text-muted; margin-top: 1; }
     """
 
     class RemoteCommand(Message):
@@ -331,6 +403,9 @@ class RemotePanel(Static):
             yield Button("  +  ", id="vol-up", variant="primary")
             yield Button(" Mute ", id="vol-mute", variant="error")
 
+        # Keyboard status
+        yield Label("[dim]i: text input[/]", id="kbd-state")
+
     BUTTON_MAP = {
         "btn-up": "up", "btn-down": "down", "btn-left": "left", "btn-right": "right",
         "btn-select": "select", "btn-play-pause": "play_pause",
@@ -350,6 +425,16 @@ class RemotePanel(Static):
             if cmd:
                 self.post_message(self.RemoteCommand(cmd))
 
+    def set_kbd_state(self, focused: bool) -> None:
+        try:
+            lbl = self.query_one("#kbd-state", Label)
+            if focused:
+                lbl.update("[bold $accent]text field active — press i to type[/]")
+            else:
+                lbl.update("[dim]i: text input[/]")
+        except Exception:
+            pass
+
 
 # ─── Apps Panel ───────────────────────────────────────────────────
 
@@ -357,14 +442,6 @@ class AppListView(ListView):
     """ListView that doesn't capture arrow keys — those go to Apple TV D-pad."""
 
     BINDINGS = []  # remove all default key bindings
-
-    def _on_key(self, event) -> None:
-        # Let arrow keys pass through to the app (D-pad)
-        if event.key in ("up", "down", "left", "right", "enter"):
-            event.prevent_default()
-            event.stop()
-            return
-        super()._on_key(event)
 
 
 class AppsPanel(Static):
@@ -507,14 +584,15 @@ class AppleTVApp(App):
         Binding("right", "remote('right')", "Right"),
         Binding("w", "remote('up')", "", show=False),
         Binding("a", "remote('left')", "", show=False),
-        Binding("enter", "remote('select')", "OK", priority=True),
+        Binding("enter", "remote('select')", "OK"),
         Binding("o", "remote('select')", "", show=False),
-        Binding("escape", "remote('menu')", "Back", priority=True),
-        Binding("backspace", "remote('menu')", "", priority=True, show=False),
+        Binding("escape", "remote('menu')", "Back"),
+        Binding("backspace", "remote('menu')", "", show=False),
         Binding("delete", "remote('menu')", "", show=False),
         Binding("m", "remote('menu')", "", show=False),
         Binding("b", "remote('menu')", "", show=False),
         Binding("h", "remote('home')", "Home"),
+        Binding("i", "text_input", "Text"),
         Binding("space", "remote('play_pause')", "Play/Pause"),
         Binding("s", "remote('stop')", "Stop"),
         Binding("n", "remote('next')", "Next"),
@@ -531,7 +609,7 @@ class AppleTVApp(App):
         Binding("r", "reconnect", "Reconnect"),
         Binding("question_mark", "show_help", "?"),
         Binding("t", "toggle_dark", "Theme"),
-        Binding("q", "quit", "Quit", priority=True),
+        Binding("q", "quit", "Quit"),
     ]
 
     atv: Any = None
@@ -607,6 +685,7 @@ class AppleTVApp(App):
 
             await self._update_now_playing()
             await self._update_volume()
+            self._update_keyboard()
             await self._load_system_info(config)
             await self._load_apps()
             self._setup_push_updates()
@@ -673,6 +752,7 @@ class AppleTVApp(App):
             await self._update_volume()
             if not self._push_listener:
                 await self._update_now_playing()
+            self._update_keyboard()
         except (ConnectionError, OSError, asyncio.TimeoutError, BrokenPipeError):
             self.connected = False
             self._log("[yellow]Reconnecting...[/]")
@@ -695,6 +775,16 @@ class AppleTVApp(App):
         try:
             vol = self.atv.audio.volume or 0
             # No separate volume widget — volume is in RemotePanel
+        except Exception:
+            pass
+
+    def _update_keyboard(self) -> None:
+        if not self.atv:
+            return
+        try:
+            state = self.atv.keyboard.text_focus_state
+            focused = getattr(state, "name", "") == "Focused"
+            self.query_one(RemotePanel).set_kbd_state(focused)
         except Exception:
             pass
 
@@ -810,6 +900,43 @@ class AppleTVApp(App):
             await self.atv.remote_control.set_repeat(cycle.get(current, RepeatState.Off))
         except Exception:
             pass
+
+    async def action_text_input(self) -> None:
+        """Open the text input dialog."""
+        if not self.atv:
+            return
+        try:
+            state = self.atv.keyboard.text_focus_state
+            focused = getattr(state, "name", "") == "Focused"
+            current = await self.atv.keyboard.text_get() if focused else ""
+        except Exception:
+            focused, current = False, ""
+        self.push_screen(
+            TextInputScreen(current or "", focused),
+            self._on_text_input_result,
+        )
+
+    def _on_text_input_result(self, result: tuple | None) -> None:
+        if result:
+            action, text = result
+            self._send_keyboard_text(action, text)
+
+    @work
+    async def _send_keyboard_text(self, action: str, text: str) -> None:
+        if not self.atv:
+            return
+        try:
+            if action == "set":
+                await self.atv.keyboard.text_set(text)
+                self._log(f"Text set: {text}")
+            elif action == "append":
+                await self.atv.keyboard.text_append(text)
+                self._log(f"Text appended: {text}")
+            elif action == "clear":
+                await self.atv.keyboard.text_clear()
+                self._log("Text cleared")
+        except Exception as e:
+            self._log(f"[red]Keyboard: {e}[/]")
 
     async def action_power_toggle(self) -> None:
         if not self.atv:
