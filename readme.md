@@ -95,6 +95,7 @@ atv              # launch tui (default)
 atv add          # add/pair apple tv
 atv remove       # remove paired device
 atv scan         # discover apple tvs on network
+atv scan --avahi # discover apple tvs using Avahi (requires avahi-browse)
 atv power status # check power state
 atv remote play  # send play command
 atv audio up     # volume up
@@ -102,6 +103,10 @@ atv apps list    # list installed apps
 atv shell        # interactive repl
 atv --help       # all commands
 ```
+
+`atv scan --avahi` uses the system's Avahi service browser to find Apple TV
+hosts before probing them with pyatv. Install `avahi-browse` and use this option
+if the default multicast scan does not find your Apple TV.
 
 ## volume on apple tv 4k
 

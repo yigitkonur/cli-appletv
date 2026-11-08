@@ -1,8 +1,10 @@
 """Main CLI entry point for pyatv-cli."""
-import click
 import asyncio
+import ipaddress
+import subprocess
 import sys
 
+import click
 import pyatv
 from pyatv.const import Protocol
 
@@ -103,12 +105,29 @@ def tui(device, host):
 @cli.command()
 @click.option("--timeout", "-t", type=int, default=5, help="Scan timeout in seconds.")
 @click.option("--host", help="Scan a specific IP address.")
-def scan(timeout, host):
+@click.option("--avahi", is_flag=True, help="Use Avahi to discover Apple TV hosts.")
+def scan(timeout, host, avahi):
     """🔍 Discover Apple TVs on the network."""
+    if avahi and host:
+        raise click.UsageError("--avahi cannot be combined with --host.")
+
     async def _run():
         print_info(f"Scanning for Apple TVs (timeout: {timeout}s)...")
         scan_kwargs = {"timeout": timeout}
-        if host:
+        if avahi:
+            try:
+                hosts = _discover_avahi_hosts(timeout)
+            except FileNotFoundError:
+                print_error("'avahi-browse' is required for --avahi but was not found.")
+                return
+            except subprocess.CalledProcessError as exc:
+                print_error(f"Avahi scan failed: {exc.stderr or exc}")
+                return
+            if not hosts:
+                print_warning("Avahi did not find any Apple TV services.")
+                return
+            scan_kwargs["hosts"] = hosts
+        elif host:
             scan_kwargs["hosts"] = [host]
         devices = await pyatv.scan(asyncio.get_event_loop(), **scan_kwargs)
         if not devices:
@@ -132,6 +151,45 @@ def scan(timeout, host):
             print_device_table(devices)
             console.print(f"\n[dim]Found {len(devices)} device(s). Use [bold]atv pair[/bold] to pair.[/dim]")
     asyncio.run(_run())
+
+
+def _discover_avahi_hosts(timeout: int) -> list[str]:
+    """Return IPv4 hosts advertising Apple TV services via Avahi."""
+    hosts = set()
+    service_types = ("_airplay._tcp", "_companion-link._tcp", "_appletv-v2._tcp")
+    for service_type in service_types:
+        try:
+            result = subprocess.run(
+                [
+                    "avahi-browse", "--parsable", "--resolve", "--terminate",
+                    service_type,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            output = result.stdout
+        except subprocess.TimeoutExpired as exc:
+            output = exc.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode(errors="replace")
+
+        for line in output.splitlines():
+            fields = line.split(";")
+            if len(fields) < 8 or fields[0] != "=" or fields[4] != service_type:
+                continue
+            if service_type == "_airplay._tcp" and not any(
+                "model=AppleTV" in field for field in fields[9:]
+            ):
+                continue
+            try:
+                address = ipaddress.ip_address(fields[7])
+            except ValueError:
+                continue
+            if address.version == 4:
+                hosts.add(str(address))
+    return sorted(hosts)
 
 
 @cli.command()
